@@ -156,11 +156,21 @@ func (pi *peeringInfo) alignExistingShadowPods(shadowPodList *offloadingv1beta1.
 }
 
 func (pi *peeringInfo) checkAndAddShadowPods(shadowPod *offloadingv1beta1.ShadowPod, nsname types.NamespacedName) (found bool) {
-	_, found = pi.shadowPods[nsname.String()]
+	// No policy is applied when (re)building the cache: the already running ShadowPods must keep
+	// being accounted even if they no longer satisfy the current enforcement mode, and pod-level
+	// resources (which cannot be accounted) are not a reason to drop them.
+	spQuota := computeShadowPodQuota(&shadowPod.Spec.Pod, pi.totalQuota)
+
+	spd, found := pi.shadowPods[nsname.String()]
 	if !found {
-		// Errors are intentionally ignored here.
-		spQuota, _ := getQuotaFromShadowPod(shadowPod, offloadingv1beta1.NoLimitsEnforcement)
 		pi.addShadowPod(createShadowPodDescription(shadowPod.GetName(), shadowPod.GetNamespace(), shadowPod.GetUID(), *spQuota))
+		return
+	}
+	// The accounting changed (e.g. the sidecar and overhead semantics): recompute the quota of the
+	// running ShadowPod, adjusting the used quota by the delta. The object is never evicted nor
+	// rejected, so an exceeded quota becomes visible but only affects the subsequent admissions.
+	if spd.running && spd.uid == shadowPod.GetUID() {
+		pi.updateShadowPodQuota(spd, *spQuota)
 	}
 	return
 }

@@ -121,6 +121,15 @@ func (pi *peeringInfo) removeShadowPod(spd *Description) {
 	delete(pi.shadowPods, spd.namespacedName.String())
 }
 
+// updateShadowPodQuota replaces the quota accounted for an already tracked ShadowPod, adjusting the
+// used quota by the delta. It is used when the accounting semantics change or the corresponding
+// ShadowPod is modified, and it deliberately does not evict the object.
+func (pi *peeringInfo) updateShadowPodQuota(spd *Description, newQuota corev1.ResourceList) {
+	pi.subUsedResources(spd.quota)
+	spd.quota = newQuota
+	pi.addUsedResources(spd.quota)
+}
+
 func (pi *peeringInfo) testAndUpdateCreation(ctx context.Context, c client.Client,
 	sp *offloadingv1beta1.ShadowPod, limitsEnforcement offloadingv1beta1.LimitsEnforcement, dryRun bool) error {
 	pi.mu.Lock()
